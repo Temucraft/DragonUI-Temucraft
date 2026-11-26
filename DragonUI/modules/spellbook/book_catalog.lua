@@ -492,6 +492,8 @@ local function treeOfTab(spells, index)
     end
 end
 
+local withoutRacials   -- defined below (used here before its definition)
+
 function Book.ClassSections(filters)
     local index, greys = filters.trainer, greysOf(filters)
     local shelves, placed = {}, {}
@@ -546,7 +548,7 @@ end
 
 local RACIAL_ORDER = { "Combat", "Stats", "Resistance", "Weapon Skill", "Profession", "Utility" }
 
-local function withoutRacials(list)
+function withoutRacials(list)   -- assigns the local declared above Book.ClassSections
     local out = {}
     for _, entry in ipairs(list) do
         if not Book.IsRacial(entry) then out[#out + 1] = entry end
