@@ -12,8 +12,9 @@ addon:RegisterModule("spellbook", Book, tr["Spellbook"], tr["Learned spells book
     { lifecyclePrefix = "Spellbook", loadOnce = true })
 
 -- Category ids double as secure attribute suffixes and as the tab catchers' IDs.
-Book.CLASS, Book.GENERAL, Book.PET = 1, 2, 3
-Book.CATEGORIES = 3
+-- Temucraft: Racials (4) is a tab of its own, between General and the class.
+Book.CLASS, Book.GENERAL, Book.PET, Book.RACIAL = 1, 2, 3, 4
+Book.CATEGORIES = 4
 Book.SLOTS = 54
 
 Book.models, Book.dirty, Book.labels, Book.bound = {}, {}, {}, {}
@@ -97,7 +98,7 @@ function Book.MarkDirty(...)
 end
 
 function Book.MarkAllDirty()
-    Book.MarkDirty(Book.CLASS, Book.GENERAL, Book.PET)
+    Book.MarkDirty(Book.CLASS, Book.GENERAL, Book.PET, Book.RACIAL)
 end
 
 -- The page reset waits for the rebuild so no click can resolve page 1 while page N is drawn.
@@ -264,10 +265,10 @@ local function listenToGame()
     Book.On("PLAYER_LEVEL_UP", function(level)
         -- UnitLevel can still report the old level while this event is dispatched.
         Book.levelHint = level
-        Book.MarkDirty(Book.CLASS, Book.GENERAL)
+        Book.MarkDirty(Book.CLASS, Book.GENERAL, Book.RACIAL)
     end)
-    Book.On("PLAYER_TALENT_UPDATE", function() Book.MarkDirty(Book.CLASS, Book.GENERAL) end)
-    Book.On("ACTIVE_TALENT_GROUP_CHANGED", function() Book.MarkDirty(Book.CLASS, Book.GENERAL) end)
+    Book.On("PLAYER_TALENT_UPDATE", function() Book.MarkDirty(Book.CLASS, Book.GENERAL, Book.RACIAL) end)
+    Book.On("ACTIVE_TALENT_GROUP_CHANGED", function() Book.MarkDirty(Book.CLASS, Book.GENERAL, Book.RACIAL) end)
     Book.On("SPELL_UPDATE_COOLDOWN", function() Book.Queue("cooldown") end)
     Book.On("PET_BAR_UPDATE", function() Book.Queue("autocast") end)
     Book.On("UPDATE_SHAPESHIFT_FORM", function() Book.Queue("icons") end)

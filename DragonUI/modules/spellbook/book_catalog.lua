@@ -2,6 +2,7 @@
 
 local addon = select(2, ...)
 local Book = addon.SpellbookModule
+local tr = addon.L
 
 local ipairs, pairs, tonumber, sort, char = ipairs, pairs, tonumber, table.sort, string.char
 local band = bit.band
@@ -499,7 +500,7 @@ function Book.ClassSections(filters)
         local tree = index and treeOfTab(spells, index)
         if tree and placed[tree] then tree = nil end
         if tree then placed[tree] = true end
-        shelves[#shelves + 1] = { tree = tree, title = (GetSpellTabInfo(tab)), learned = onlyKept(spells, filters) }
+        shelves[#shelves + 1] = { tree = tree, title = (GetSpellTabInfo(tab)), learned = withoutRacials(onlyKept(spells, filters)) }
     end
     for _, shelf in ipairs(shelves) do
         for tree = 1, 3 do
@@ -529,9 +530,109 @@ function Book.ClassSections(filters)
     return sections
 end
 
+-- Racials (Temucraft) ------------------------------------------------------------------------------
+
+-- Their rank text starts with "Racial": "Racial", "Racial Passive", or the PTR's "Racial - Combat (Blood Fury)".
+function Book.IsRacial(entry)
+    return entry ~= nil and entry.book == "spell" and type(entry.sub) == "string" and entry.sub:find("^Racial") ~= nil
+end
+
+-- "Racial - Weapon Skill (Axes)" -> "Weapon Skill"; the old "Racial" / "Racial Passive" have no category.
+function Book.RacialCategory(sub)
+    local category = sub and (sub:match("^Racial%s*%-%s*([^%(]-)%s*%(") or sub:match("^Racial%s*%-%s*(.-)%s*$"))
+    if category and category ~= "" then return category end
+    return nil
+end
+
+local RACIAL_ORDER = { "Combat", "Stats", "Resistance", "Weapon Skill", "Profession", "Utility" }
+
+local function withoutRacials(list)
+    local out = {}
+    for _, entry in ipairs(list) do
+        if not Book.IsRacial(entry) then out[#out + 1] = entry end
+    end
+    return out
+end
+
+-- A passive's effect, readable without hovering: the first sentence of its description (the tooltip's last line).
+local effects = {}
+local effectTip
+local function racialEffect(entry)
+    local key = entry.spellID or entry.name
+    if effects[key] ~= nil then return effects[key] or nil end
+    if not effectTip then
+        effectTip = CreateFrame("GameTooltip", "DragonUIRacialScanTooltip", nil, "GameTooltipTemplate")
+    end
+    effectTip:SetOwner(WorldFrame, "ANCHOR_NONE")
+    effectTip:SetSpell(entry.index, entry.book)
+    local text
+    for line = effectTip:NumLines(), 2, -1 do
+        local left = _G["DragonUIRacialScanTooltipTextLeft" .. line]
+        local value = left and left:GetText()
+        if value and value ~= "" and value ~= " " then
+            text = value
+            break
+        end
+    end
+    effectTip:Hide()
+    if text then
+        text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[\r\n]+", " ")
+        text = text:match("^(.-[%.!])%s") or text
+    end
+    effects[key] = text or false
+    return text
+end
+
+local function racialSections(filters)
+    local groups, order = {}, {}
+    for tab = 1, GetNumSpellTabs() do
+        for _, entry in ipairs(Book.ReadTab(tab, filters.allRanks)) do
+            if Book.IsRacial(entry) and kept(entry, filters) then
+                entry.racial = true
+                if entry.passive then entry.effect = racialEffect(entry) end
+                local title = Book.RacialCategory(entry.sub) or tr["Racial"]
+                if not groups[title] then
+                    groups[title] = {}
+                    order[#order + 1] = title
+                end
+                local list = groups[title]
+                list[#list + 1] = entry
+            end
+        end
+    end
+    local sections, used = {}, {}
+    local function take(title)
+        if groups[title] and not used[title] then
+            used[title] = true
+            sections[#sections + 1] = { title = title, entries = groups[title] }
+        end
+    end
+    for _, title in ipairs(RACIAL_ORDER) do take(title) end
+    local rest = {}
+    for _, title in ipairs(order) do
+        if not used[title] and title ~= tr["Racial"] then rest[#rest + 1] = title end
+    end
+    sort(rest)
+    for _, title in ipairs(rest) do take(title) end
+    take(tr["Racial"])
+    -- One kind of racial only: no heading needed.
+    if #sections == 1 and sections[1].title == tr["Racial"] then sections[1].title = nil end
+    return sections
+end
+
+function Book.HasRacials()
+    for tab = 1, GetNumSpellTabs() do
+        for _, entry in ipairs(Book.ReadTab(tab, false)) do
+            if Book.IsRacial(entry) then return true end
+        end
+    end
+    return false
+end
+
 local function generalSections(filters)
     if GetNumSpellTabs() < 1 then return {} end
-    local cards = withGreys(onlyKept(Book.ReadTab(1, filters.allRanks), filters), greysOf(filters)[0], filters)
+    local learned = withoutRacials(onlyKept(Book.ReadTab(1, filters.allRanks), filters))
+    local cards = withGreys(learned, greysOf(filters)[0], filters)
     if #cards == 0 then return {} end
     return { { entries = cards } }
 end
@@ -548,17 +649,20 @@ end
 
 function Book.CategoryExists(cat)
     if cat == Book.PET then return Book.PetBook() ~= nil end
+    if cat == Book.RACIAL then return Book.HasRacials() end
     return true
 end
 
 function Book.BuildSections(cat, filters)
     if cat == Book.CLASS then return Book.ClassSections(filters) end
     if cat == Book.GENERAL then return generalSections(filters) end
+    if cat == Book.RACIAL then return racialSections(filters) end
     return petSections(filters)
 end
 
 function Book.CategoryLabel(cat)
     if cat == Book.CLASS then return (UnitClass("player")) end
+    if cat == Book.RACIAL then return tr["Racials"] end
     if cat == Book.GENERAL then return (GetSpellTabInfo(1)) end
     local _, token = Book.PetBook()
     return _G["PET_TYPE_" .. (token or "PET")]

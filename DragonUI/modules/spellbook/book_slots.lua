@@ -299,6 +299,11 @@ end
 
 local function subtitle(entry)
     if entry.grey then return greySubtitle(entry) end
+    -- Temucraft: a racial passive says what it does (no hovering needed); an active one just "Racial".
+    if entry.racial then
+        if entry.effect then return entry.effect end
+        return entry.passive and tr["Racial Passive"] or tr["Racial"]
+    end
     local text = entry.sub
     if entry.rankLevel then text = text .. "  (" .. LEVEL_GAINED:format(entry.rankLevel) .. ")" end
     if entry.trainer then text = text .. trainerSuffix(entry.trainer) end
@@ -395,6 +400,9 @@ function Book.PaintCard(card, entry)
     card.name:SetText(entry.name)
     fitName(card)
     card.sub:SetText(subtitle(entry))
+    -- A racial's effect may take two lines under a one-line name.
+    local twoLines = entry.effect ~= nil and card.name:GetHeight() <= nameLine + 1
+    card.sub:SetHeight(twoLines and subLine * 2 + 1 or subLine + 1)
 
     for _, extra in ipairs(card.extras) do
         extra:Hide()
@@ -485,12 +493,14 @@ function Book.DrawSpread(cat, page)
 end
 
 -- Paging swaps the spell under a pointer that has not moved; hover and tooltip follow the new card.
+-- Temucraft: not while the settings menu is open over the cards (IsMouseOver ignores what lies on top).
 function Book.RefreshHoverTooltip()
     local hovered
+    local covered = Book.SettingsMenuOpen and Book.SettingsMenuOpen()
     for slot = 1, Book.SLOTS do
         local card = cards[slot]
         if card and card:IsShown() then
-            local over = card:IsMouseOver() and true or false
+            local over = not covered and card:IsMouseOver() and true or false
             if over ~= (card.over and true or false) then Book.SetCardPointer(card, over, false) end
             if over then hovered = card end
         end
@@ -526,12 +536,37 @@ local function greyTooltip(entry)
     if entry.needs then tip:AddLine(ITEM_REQ_SKILL:format(GetSpellInfo(entry.needs) or ""), 1, 0.1, 0.1) end
 end
 
+-- Temucraft: beside the book at the card's height, on the side nearer the card, so the tooltip never covers the
+-- page's other spells; the other side when the screen ends there, under the card when neither side has room.
+local function placeBeside(card)
+    local root = Book.root
+    local left, right, cardLeft, cardRight, top = root:GetLeft(), root:GetRight(), card:GetLeft(), card:GetRight(), card:GetTop()
+    if not (left and right and cardLeft and cardRight and top) then return end
+    local rootScale, cardScale, tipScale = root:GetEffectiveScale(), card:GetEffectiveScale(), tip:GetEffectiveScale()
+    local bookLeft, bookRight = left * rootScale, right * rootScale
+    local middle, cardTop = (cardLeft + cardRight) / 2 * cardScale, top * cardScale
+    local width = tip:GetWidth() * tipScale
+    local screen = UIParent:GetRight() * UIParent:GetEffectiveScale()
+    local fitsLeft, fitsRight = bookLeft - width - 4 >= 0, bookRight + width + 4 <= screen
+    local onLeft = middle - bookLeft < bookRight - middle
+    if onLeft and not fitsLeft then onLeft = false elseif not onLeft and not fitsRight then onLeft = fitsLeft end
+    tip:ClearAllPoints()
+    if not (fitsLeft or fitsRight) then
+        tip:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -2)
+    elseif onLeft then
+        tip:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", (bookLeft - 4) / tipScale, cardTop / tipScale)
+    else
+        tip:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (bookRight + 4) / tipScale, cardTop / tipScale)
+    end
+end
+
 function Book.CardEnter(card)
     local shown = card.entry
     if shown == nil then return end
+    if Book.SettingsMenuOpen and Book.SettingsMenuOpen() then return end
     Book.SetCardPointer(card, true, card.pressed)
     Book.MarkBars(shown)
-    tip:SetOwner(card, "ANCHOR_RIGHT")
+    tip:SetOwner(card, "ANCHOR_NONE")
     local keepFresh
     if shown.grey then
         greyTooltip(shown)
@@ -548,6 +583,7 @@ function Book.CardEnter(card)
     -- GameTooltip_OnUpdate calls this back every 0.2 s so cooldowns and costs stay current.
     card.UpdateTooltip = keepFresh and Book.CardEnter or nil
     tip:Show()
+    placeBeside(card)
 end
 
 function Book.CardLeave(card)

@@ -16,9 +16,9 @@ local SEARCH_W, SEARCH_MIN = 220, 90
 local CORNER_SPEED = 32
 
 -- Left to right on screen; the category ids behind them (and the secure data) keep their numbers.
-local TAB_ORDER = { Book.GENERAL, Book.CLASS, Book.PET }
+local TAB_ORDER = { Book.GENERAL, Book.RACIAL, Book.CLASS, Book.PET }
 local TAB_BINDINGS = { [Book.CLASS] = "TOGGLESPELLBOOK", [Book.GENERAL] = "TOGGLESPELLBOOK",
-    [Book.PET] = "TOGGLEPETBOOK" }
+    [Book.RACIAL] = "TOGGLESPELLBOOK", [Book.PET] = "TOGGLEPETBOOK" }
 
 local tabs, flagged = {}, {}
 local drawn = {}
@@ -358,8 +358,20 @@ local function flipOption(flip)
     Book.RestartFromFirstPage()
 end
 
-local function checkItem(label, isOn, flip)
-    return { text = label, keepShown = true, checked = isOn, func = function() flipOption(flip) end }
+-- Temucraft: every option says what it does when hovered.
+local function explain(title, ...)
+    local lines = { ... }
+    return function(tooltip)
+        tooltip:SetText(title, 1, 1, 1)
+        for _, line in ipairs(lines) do
+            if type(line) == "function" then line = line() end
+            if line then tooltip:AddLine(line, nil, nil, nil, true) end
+        end
+    end
+end
+
+local function checkItem(label, isOn, flip, tooltip)
+    return { text = label, keepShown = true, checked = isOn, tooltip = tooltip, func = function() flipOption(flip) end }
 end
 
 -- Ranks follow the client setting behind Blizzard's own checkbox, so both books agree.
@@ -367,12 +379,21 @@ local function allRanksOn()
     return GetCVarBool("ShowAllSpellRanks") and true or false
 end
 
-local function styleItem(label, style)
+local ONE_RANK_NOTE = tr["Only spells that keep their lower ranks have one: mana and health spells. Energy, rage and runic power abilities keep only their highest rank."]
+
+local function rankOffNote()
+    if allRanksOn() then
+        return "|cffff5050" .. tr["Off while Show All Ranks is on: every rank already has its own card."] .. "|r"
+    end
+end
+
+local function styleItem(label, style, what)
     return {
         text = label,
         keepShown = true,
         indent = 12,
         checked = function() return Book.RankStyle() == style end,
+        tooltip = explain(label, what, rankOffNote),
         func = function()
             if Book.RefuseInCombat() then return end
             addon.RefreshSpellbookRankSelector(style)
@@ -382,42 +403,56 @@ end
 
 local MENU, fillMenu = {}, nil
 
+local SELECTOR = {
+    text = tr["Show Lower Rank Selector"],
+    keepShown = true,
+    checked = function() return Book.Config().rankSelectorShown ~= false end,
+    tooltip = explain(tr["Show Lower Rank Selector"],
+        tr["A spell with lower ranks gets a button for them: pick a rank to cast it, or drag it to an action bar."],
+        ONE_RANK_NOTE, rankOffNote),
+    func = function()
+        if Book.RefuseInCombat() then return end
+        local profile = Book.Config()
+        profile.rankSelectorShown = profile.rankSelectorShown == false
+        fillMenu()
+        addon.RefreshSpellbookRankSelector()
+    end,
+}
+
 local BASE = {
     { text = tr["Spellbook settings"], isTitle = true },
     checkItem(tr["Show All Ranks"], allRanksOn, function()
         SetCVar("ShowAllSpellRanks", allRanksOn() and "0" or "1")
-    end),
+        fillMenu()
+    end, explain(tr["Show All Ranks"], tr["Every rank of a spell gets its own card, with the level it is learned at."],
+        tr["Only spells that keep their lower ranks have more than one: mana and health spells. Energy, rage and runic power abilities keep only their highest rank."])),
     checkItem(tr["Hide Passives"], function() return Book.Config().hidePassives end, function(profile)
         profile.hidePassives = not profile.hidePassives
-    end),
+    end, explain(tr["Hide Passives"], tr["Passive abilities leave the book; only spells you can cast stay."])),
     checkItem(tr["Hide Unlearned Spells"], function() return Book.Config().hideUnlearned end, function(profile)
         profile.hideUnlearned = not profile.hideUnlearned
-    end),
+    end, explain(tr["Hide Unlearned Spells"], tr["Spells you haven't learned yet (the grey cards with their level and training cost) are hidden."])),
     checkItem(tr["Highlight spells missing from action bars"], function() return Book.Config().highlightUnbound end,
-        function(profile) profile.highlightUnbound = not profile.highlightUnbound end),
-    {
-        text = tr["Show Lower Rank Selector"],
-        keepShown = true,
-        checked = function() return Book.Config().rankSelectorShown ~= false end,
-        func = function()
-            if Book.RefuseInCombat() then return end
-            local profile = Book.Config()
-            profile.rankSelectorShown = profile.rankSelectorShown == false
-            fillMenu()
-            addon.RefreshSpellbookRankSelector()
-        end,
-    },
+        function(profile) profile.highlightUnbound = not profile.highlightUnbound end,
+        explain(tr["Highlight spells missing from action bars"], tr["Spells you can cast that are on none of your action bars glow, so you can see what to drag onto them."])),
+    SELECTOR,
 }
 
 local STYLE_CHOICES = {
-    styleItem(tr["Menu under the icon"], "dropdown"),
-    styleItem(tr["Side flyout"], "flyout"),
+    styleItem(tr["Menu under the icon"], "dropdown", tr["The lower ranks open in a list under the spell's icon."]),
+    styleItem(tr["Side flyout"], "flyout", tr["A tab on the card's side slides the lower ranks out beside it."]),
 }
 
 -- Filled in place: the open menu redraws from this same table, so the style choices come and go live.
+-- With all ranks shown the selector has nothing to offer: it and its styles are greyed out (their tooltips say why).
 fillMenu = function()
     for index = #MENU, 1, -1 do
         MENU[index] = nil
+    end
+    local greyed = allRanksOn()
+    SELECTOR.disabled = greyed
+    for _, entry in ipairs(STYLE_CHOICES) do
+        entry.disabled = greyed
     end
     for _, entry in ipairs(BASE) do
         MENU[#MENU + 1] = entry
@@ -428,8 +463,15 @@ fillMenu = function()
     end
 end
 
+function Book.SettingsMenuOpen()
+    return gear ~= nil and addon.Menu.IsOpenFor(gear) and true or false
+end
+
 function Book.MenuClosed()
-    if Book.Locked() or addon.Menu.IsOpenFor(gear) then return end
+    if addon.Menu.IsOpenFor(gear) then return end
+    -- Temucraft: the card under the pointer gets its tooltip back.
+    if Book.IsOpen() then Book.RefreshHoverTooltip() end
+    if Book.Locked() then return end
     Book.root:SetAttribute("wheel-off", nil)
 end
 
@@ -444,6 +486,7 @@ local function openMenu()
     addon.Menu.Open(gear, MENU)
     if not addon.Menu.IsOpenFor(gear) then return end
     Book.root:SetAttribute("wheel-off", true)
+    Book.RefreshHoverTooltip()
     if not menuHooked then
         menuHooked = true
         _G.DragonUIMenu:HookScript("OnHide", Book.MenuClosed)

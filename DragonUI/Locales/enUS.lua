@@ -874,6 +874,20 @@ L["Hide Unlearned Spells"] = true
 L["Show Lower Rank Selector"] = true
 L["Menu under the icon"] = true
 L["Side flyout"] = true
+-- Temucraft: the Racials tab and the spellbook settings' tooltips
+L["Racials"] = true
+L["Racial"] = true
+L["Racial Passive"] = true
+L["Only spells that keep their lower ranks have one: mana and health spells. Energy, rage and runic power abilities keep only their highest rank."] = true
+L["Off while Show All Ranks is on: every rank already has its own card."] = true
+L["A spell with lower ranks gets a button for them: pick a rank to cast it, or drag it to an action bar."] = true
+L["Every rank of a spell gets its own card, with the level it is learned at."] = true
+L["Only spells that keep their lower ranks have more than one: mana and health spells. Energy, rage and runic power abilities keep only their highest rank."] = true
+L["Passive abilities leave the book; only spells you can cast stay."] = true
+L["Spells you haven't learned yet (the grey cards with their level and training cost) are hidden."] = true
+L["Spells you can cast that are on none of your action bars glow, so you can see what to drag onto them."] = true
+L["The lower ranks open in a list under the spell's icon."] = true
+L["A tab on the card's side slides the lower ranks out beside it."] = true
 L["Lower Ranks"] = true
 
 -- Dropdown placeholder
