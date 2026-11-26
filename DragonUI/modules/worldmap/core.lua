@@ -27,7 +27,7 @@ WM.DETAIL_W, WM.DETAIL_H = 1002, 668
 local WINDOWED_CANVAS_W = 697
 -- Kept clear of the action bars and the screen's right edge when maximized.
 local MAX_BOTTOM_MARGIN, MAX_RIGHT_MARGIN = 96, 24
-local MAP_REPLACERS = { "Mapster" }
+local MAP_REPLACERS = { "Mapster", "Leatrix_Maps" } -- Temucraft: Leatrix Maps is our standard map
 local PORTRAIT = "Interface\\QuestFrame\\UI-QuestLog-BookIcon"
 local ROCK = addon._dir .. "UI\\ui-background-rock"
 local BASE_LEVEL = 10

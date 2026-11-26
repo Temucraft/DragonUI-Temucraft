@@ -15,10 +15,45 @@ local RACE_FALLBACK = { GNOME = "DWARF", TROLL = "ORC" }
 local FLOOR = { BLOODELF = true, DRAENEI = true, NIGHTELF = true, SCOURGE = true, TAUREN = true }
 local FLOOR_ART = addon._dir .. "CharacterPanel\\RaceBackground\\"
 
+-- Races the 3.3.5a client has art for (after RACE_FALLBACK).
+local STOCK_ART = {
+    BLOODELF = true, DRAENEI = true, DWARF = true, HUMAN = true, NIGHTELF = true,
+    ORC = true, SCOURGE = true, TAUREN = true,
+}
+
+-- Custom races (servers with more than the stock ten) use their own art when a client patch ships it
+-- (DressUpBackground-<RACE>1..4), else the closest stock race's, so the backdrop is never left blank.
+local CUSTOM_ART = {
+    GOBLIN = "ORC", WORGEN = "HUMAN", ALLIANCEPANDAREN = "HUMAN", HORDEPANDAREN = "ORC",
+    NIGHTBORNE = "NIGHTELF", HIGHMOUNTAINTAUREN = "TAUREN", VOIDELF = "BLOODELF", LIGHTFORGEDDRAENEI = "DRAENEI",
+    ZANDALARITROLL = "ORC", KULTIRAN = "HUMAN", VULPERA = "ORC", DARKIRONDWARF = "DWARF", MAGHAR = "ORC",
+    MECHAGNOME = "DWARF", ALLIANCEDRACTHYR = "HUMAN", HORDEDRACTHYR = "ORC", ALLIANCEEARTHEN = "DWARF",
+    HORDEEARTHEN = "DWARF", ALLIANCEHARANIR = "NIGHTELF", HORDEHARANIR = "NIGHTELF",
+}
+local customArt, probe = {}, nil
+
+local function customRace(upper)
+    local known = customArt[upper]
+    if known then return known end
+    -- SetTexture answers nil for a file the client doesn't have.
+    probe = probe or UIParent:CreateTexture(nil, "BACKGROUND")
+    if probe:SetTexture("Interface\\DressUpFrame\\DressUpBackground-" .. upper .. "1") then
+        known = upper
+    else
+        known = CUSTOM_ART[upper]
+            or (UnitFactionGroup("player") == "Horde" and "ORC" or "HUMAN")
+    end
+    probe:SetTexture(nil)
+    customArt[upper] = known
+    return known
+end
+
 local function artRace(fileName)
     if not fileName then return "ORC" end
     local upper = strupper(fileName)
-    return RACE_FALLBACK[upper] or upper
+    upper = RACE_FALLBACK[upper] or upper
+    if STOCK_ART[upper] then return upper end
+    return customRace(upper)
 end
 
 local function artPath(fileName, suffix)

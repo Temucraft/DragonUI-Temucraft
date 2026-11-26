@@ -137,9 +137,17 @@ local RACE_ORDINALS = {
     Tauren = 6, Gnome = 7, Troll = 8, BloodElf = 10, Draenei = 11,
 }
 
+-- Every stock race of each faction: the trainer data's race masks only know the stock ten.
+local FACTION_MASKS = { Alliance = 1 + 4 + 8 + 64 + 1024, Horde = 2 + 16 + 32 + 128 + 512 }
+
+-- Races past the stock ten (custom servers: Worgen, Goblin, Pandaren, allied races...) have no ordinal here, so a mask
+-- of 0 hid every race-limited trainer spell from them (mage teleports and portals, paladin mounts and seals,
+-- Bloodlust / Heroism). They count as every stock race of their faction instead, as such servers train them.
 function Book.RaceBit(token)
     local ordinal = RACE_ORDINALS[token]
-    return ordinal and 2 ^ (ordinal - 1) or 0
+    if ordinal then return 2 ^ (ordinal - 1) end
+    if not token then return 0 end
+    return FACTION_MASKS[UnitFactionGroup("player") or ""] or 0
 end
 
 local trainerIndexes = {}

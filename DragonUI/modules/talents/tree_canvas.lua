@@ -318,12 +318,13 @@ local function snapEdges(tree, force)
     end
 end
 
-local function drawEdge(tree, fromX, fromY, toX, toY, active, shapeKey, scale)
+-- shaftOnly: a leg of a bent edge, drawn to the point itself and without an arrowhead.
+local function drawEdge(tree, fromX, fromY, toX, toY, active, shapeKey, scale, shaftOnly)
     local dx, dy = toX - fromX, fromY - toY
     local length = sqrt(dx * dx + dy * dy)
     if length <= 0 then return end
     dx, dy = dx / length, dy / length
-    local back = outlineReach(shapeKey, scale, max(abs(dx), abs(dy))) + TIP_GAP + TIP_REACH
+    local back = shaftOnly and 0 or outlineReach(shapeKey, scale, max(abs(dx), abs(dy))) + TIP_GAP + TIP_REACH
 
     -- 3.3.5a has no texture sublevels, so shaft and arrowhead need separate layers to stack reliably.
     local line = edgeTexture(tree, "lines", "BORDER")
@@ -338,7 +339,7 @@ local function drawEdge(tree, fromX, fromY, toX, toY, active, shapeKey, scale)
     arrow:SetTexture(addon._dir .. "Talents\\talents-arrows")
     arrow:SetSize(ARROW_SIZE, ARROW_SIZE)
     pointArrow(arrow, active, -dy, dx)
-    arrow:Show()
+    if shaftOnly then arrow:Hide() else arrow:Show() end
 
     local edge = line.edge or {}
     line.edge = edge
@@ -349,6 +350,31 @@ local function drawEdge(tree, fromX, fromY, toX, toY, active, shapeKey, scale)
 end
 
 local drawnFrom = {}
+
+-- Custom servers put a talent between another and its prerequisite in the same column. A straight edge then runs
+-- under the middle talent and reads as if that one were the prerequisite, so it bends round it through the gap
+-- between the columns instead: out of the prerequisite, down the gap, into the side of the talent it unlocks.
+local occupied = {}
+local GAP_X = 32
+
+local function blockedBetween(link, entry)
+    if link.column ~= entry.column then return false end
+    local from, to = min(link.tier, entry.tier), max(link.tier, entry.tier)
+    for tier = from + 1, to - 1 do
+        if occupied[ns.CellKey(tier, entry.column)] then return true end
+    end
+    return false
+end
+
+local function drawBentEdge(tree, link, entry, shift, shapeKey, scale)
+    local fromX, fromY = cellCentre(link.tier, link.column, shift)
+    local toX, toY = cellCentre(entry.tier, entry.column, shift)
+    -- Columns run 1..4; the last one bends left, the others right.
+    local laneX = fromX + (entry.column >= 4 and -GAP_X or GAP_X)
+    drawEdge(tree, fromX, fromY, laneX, fromY, link.active, shapeKey, scale, true)
+    drawEdge(tree, laneX, fromY, laneX, toY, link.active, shapeKey, scale, true)
+    drawEdge(tree, laneX, toY, toX, toY, link.active, shapeKey, scale)
+end
 
 local function resetEdges(tree)
     tree.used.lines, tree.used.arrows = 0, 0
@@ -443,6 +469,10 @@ function ns.PaintTrees(view)
             setHeader(tree, data.name, data.points)
             resetEdges(tree)
             local shift = view.shift or 0
+            wipe(occupied)
+            for _, entry in ipairs(data.talents) do
+                occupied[ns.CellKey(entry.tier, entry.column)] = true
+            end
             for k, entry in ipairs(data.talents) do
                 local node = tree.nodes[k] or newNode(tree)
                 tree.nodes[k] = node
@@ -459,8 +489,12 @@ function ns.PaintTrees(view)
                     local cell = ns.CellKey(link.tier, link.column)
                     if not drawnFrom[cell] then
                         drawnFrom[cell] = true
-                        local fromX, fromY = cellCentre(link.tier, link.column, shift)
-                        drawEdge(tree, fromX, fromY, toX, toY, link.active, shapeKey, scale)
+                        if blockedBetween(link, entry) then
+                            drawBentEdge(tree, link, entry, shift, shapeKey, scale)
+                        else
+                            local fromX, fromY = cellCentre(link.tier, link.column, shift)
+                            drawEdge(tree, fromX, fromY, toX, toY, link.active, shapeKey, scale)
+                        end
                     end
                 end
             end

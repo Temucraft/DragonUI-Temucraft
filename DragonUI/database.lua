@@ -487,7 +487,7 @@ local defaults = {
 
         xprepbar = {
             -- Style: "dragonflightui" (custom bars) or "retailui" (atlas reskin)
-            style = "dragonflightui",
+            style = "retailui", -- Temucraft: the retail look
             -- Bar dimensions
             bar_width = 466,
             bar_height_dfui = 14,
@@ -1368,9 +1368,11 @@ local defaults = {
                 missing_health = false -- Show missing health deficit text on health bars
             },
             versioncheck = {
-                enabled = true, -- Cross-player version broadcast and update detection
+                enabled = false, -- Temucraft: off; the launcher keeps DragonUI-Temucraft up to date, and upstream releases would nag
             },
             collections = {
+                -- Temucraft: on for its micro button only; the client defines ToggleCollectionsJournal, so the button
+                -- opens the Temucraft Collections window (the server's mounts, pets and sources), not this one
                 enabled = true, -- Dedicated Pets & Mounts window opened from the micro menu
             },
             spellbook = {
@@ -1391,7 +1393,9 @@ local defaults = {
                 micro_button = true, -- Professions button in the micro menu, after Character; it opens the Overview
             },
             worldmap = {
-                enabled = true, -- Retail-style world map with breadcrumb navigation and a quest log side panel
+                -- Temucraft: off; Leatrix Maps (with Questie's pins) is the standard Temucraft world map, and this
+                -- module replaces the same frame. It also steps aside by itself while Leatrix Maps is loaded.
+                enabled = false, -- Retail-style world map with breadcrumb navigation and a quest log side panel
                 questLog = true, -- Quest log side panel open
                 maximized = false, -- Window at its maximized size
                 objectives = true, -- The objective lines under each quest title in the side panel
@@ -1425,7 +1429,9 @@ local defaults = {
                 enabled = true, -- Retail-style mail window with the Open All button
             },
             taxiframe = {
-                enabled = true, -- Retail-style flight master map window
+                -- Temucraft: off; the client's flight map (TemucraftTaxi.lua) has the route-only points of
+                -- mod-temucraft-travel. With 0003-taxi-transit-points it can be turned on and still shows them.
+                enabled = false, -- Retail-style flight master map window
             },
             inspectframe = {
                 enabled = true, -- Retail-style frame and tabs for the inspect window

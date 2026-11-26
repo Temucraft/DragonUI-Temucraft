@@ -54,6 +54,15 @@ local NODE_STYLES = {
     REACHABLE = { atlas = "Taxi_Frame_Gray", glow = "Taxi_Frame_Gray", hover = "Taxi_Frame_Yellow", size = 20, layer = 3 },
     DISTANT = { atlas = "UI-Taxi-Icon-Nub", glow = "UI-Taxi-Icon-Nub", size = 14, layer = 1 },
 }
+-- Temucraft (mod-temucraft-travel): the flight points on the way to the ones you know are on the map only to route
+-- through and can't be picked; the client patch's TemucraftTaxiLogic names them. Drawn as small grey dots.
+local TRANSIT = { atlas = "UI-Taxi-Icon-Nub", glow = "UI-Taxi-Icon-Nub", size = 10, layer = 1, transit = true }
+local function nodeStyle(index)
+    local kind = TaxiNodeGetType(index)
+    local logic = _G.TemucraftTaxiLogic
+    if logic and logic.IsTransit and logic.IsTransit(TaxiNodeName(index), kind) then return TRANSIT end
+    return NODE_STYLES[kind]
+end
 local HOVER_LAYER = 4
 -- TaxiButtonTemplate's 16px button: in 3.3.5a only that core takes the mouse, not its 32px hover glow.
 local MOUSE_SIZE = 16
@@ -142,8 +151,8 @@ end
 local hoverPin
 
 local function onNodeEnter(button)
-    local style = NODE_STYLES[TaxiNodeGetType(button:GetID())]
-    if not style or not hoverPin then return end
+    local style = nodeStyle(button:GetID())
+    if not style or style.transit or not hoverPin then return end
     hoverPin.owner = button
     -- Retail lights a reachable pin yellow while hovered.
     hoverPin.icon:SetAtlasTexture(style.hover or style.atlas)
@@ -171,9 +180,13 @@ local function styleNodes()
                 button:HookScript("OnEnter", onNodeEnter)
                 button:HookScript("OnLeave", onNodeLeave)
             end
-            local style = NODE_STYLES[TaxiNodeGetType(index)]
+            local style = nodeStyle(index)
             if style then
                 styleNode(button, style)
+                local icon = button:GetNormalTexture()
+                if icon then
+                    if style.transit then icon:SetVertexColor(0.7, 0.7, 0.7) else icon:SetVertexColor(1, 1, 1) end
+                end
                 -- Destinations stack over the green pin, which isn't a destination, so clusters stay clickable.
                 stackNode(button, style.layer)
             end
