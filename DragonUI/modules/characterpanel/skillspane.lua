@@ -192,6 +192,8 @@ local function updateEntry(row, info)
     meter:SetValue(filled)
     meter:SetStatusBarColor(shade[1], shade[2], shade[3])
     meter.Caption:SetText(caption)
+    -- Temucraft: a line without a rank (class skills, armor, languages) is a plain row, no empty bar
+    meter:SetShownCompat(ceiling > 1)
 end
 
 repaint = function()

@@ -4,7 +4,14 @@ local addon = select(2, ...)
 local CP = addon.CharacterPanel
 
 -- Six, not Blizzard's five: honorpane.lua adds a Honor tab at the end.
-local NUM_TABS = 6
+-- Temucraft: and any tab after it (CharacterFrameTab7, the Temucraft Professions tab) joins the chain and counts in
+-- the strip's width.
+local MIN_TABS = 6
+local function numTabs()
+    local n = MIN_TABS
+    while _G["CharacterFrameTab" .. (n + 1)] do n = n + 1 end
+    return n
+end
 
 local TAB_START_X = 11
 local TAB_GAP = 1
@@ -211,7 +218,7 @@ end
 -- now runs; retail hangs them off the bottom edge instead.
 local function rechain()
     local prev
-    for i = 1, NUM_TABS do
+    for i = 1, numTabs() do
         local t = tab(i)
         if t and t:IsShown() then
             reskin(t)
@@ -233,7 +240,7 @@ local TAB_RIGHT_MARGIN = 6
 
 function CP.TabStripWidth()
     local total, first = TAB_START_X, true
-    for i = 1, NUM_TABS do
+    for i = 1, numTabs() do
         local t = tab(i)
         if t and t:IsShown() then
             if not first then total = total + TAB_GAP end
@@ -251,7 +258,7 @@ end
 function CP.TabStripRight()
     local right, cf = nil, _G.CharacterFrame
     if not cf then return nil end
-    for i = 1, NUM_TABS do
+    for i = 1, numTabs() do
         local t = tab(i)
         if t and t:IsShown() then
             local r = t:GetRight()
@@ -313,7 +320,7 @@ local function build()
 
     -- Tab5 (Currency) starts hidden and Blizzard shows it once the player owns a currency,
     -- so the chain has to be rebuilt at that moment, not only at login.
-    for i = 1, NUM_TABS do
+    for i = 1, numTabs() do
         local t = tab(i)
         if t and not t._duiTabHooked then
             t._duiTabHooked = true
