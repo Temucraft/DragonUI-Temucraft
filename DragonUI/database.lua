@@ -1356,6 +1356,8 @@ local defaults = {
                 lock_hotkey = "ALT_LEFT", -- Modifier + mouse button used to lock or unlock a slot
                 lock_color = { 0.15, 0.80, 1.00, 0.95 }, -- Tint applied to the locked-slot padlock icon
                 reverse_stack = false, -- Stack items from the end so new loot appears at the top
+                auto_lock = true, -- Temucraft: quest items, keys and quest objective items count as locked
+                autoLockExempt = {}, -- Temucraft: auto-locked items the player unlocked by hand (itemID = true)
             },
             altmoney = {
                 enabled = true, -- Other characters' gold on the bag money tooltip

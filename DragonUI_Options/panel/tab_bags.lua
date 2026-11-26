@@ -559,6 +559,25 @@ local function BuildBagsTab(scroll)
     })
     C:AddDescription(sortSection, LO["Color used to tint the padlock icon shown on locked bag/bank slots."] or "Color used to tint the padlock icon shown on locked bag/bank slots.")
 
+    -- Temucraft: auto-locks (bagsort.lua, IsSlotProtected)
+    C:AddToggle(sortSection, {
+        label = LO["Lock Quest Items and Keys"] or "Lock Quest Items and Keys",
+        desc = LO["Quest items, keys and the items your current quests ask for are locked like a padlocked slot: sorting leaves them where they are, Sell Junk skips them, a vendor sale is bought back and deleting is refused. They unlock when the quest is turned in or abandoned. The lock hotkey on an item unlocks or locks it by hand."] or "Quest items, keys and the items your current quests ask for are locked like a padlocked slot: sorting leaves them where they are, Sell Junk skips them, a vendor sale is bought back and deleting is refused. They unlock when the quest is turned in or abandoned. The lock hotkey on an item unlocks or locks it by hand.",
+        getFunc = function()
+            local cfg = GetBagSortConfig(false)
+            return not cfg or cfg.auto_lock ~= false
+        end,
+        setFunc = function(val)
+            local cfg = GetBagSortConfig(true)
+            if cfg then cfg.auto_lock = val and true or false end
+            if addon.RefreshBagSortLockMarkers then addon.RefreshBagSortLockMarkers() end
+        end,
+        disabled = function()
+            local cfg = GetBagSortConfig(false)
+            return not (cfg and cfg.enabled)
+        end,
+    })
+
     C:AddToggle(sortSection, {
         label = LO["Reverse Stack Order"] or "Reverse Stack Order",
         desc = LO["Stack sorted items from the end of each bag so empty slots stay at the top."] or "Stack sorted items from the end of each bag so empty slots stay at the top.",

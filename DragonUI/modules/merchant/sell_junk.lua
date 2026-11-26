@@ -26,7 +26,9 @@ local function forEachJunkSlot(visit)
     for container = 0, NUM_BAG_SLOTS or 4 do
         for slot = 1, GetContainerNumSlots(container) or 0 do
             local link = GetContainerItemLink(container, slot)
-            if isJunk(link) then
+            -- Temucraft: padlocked slots and auto-locked items (bagsort.lua) are not junk to sell
+            local locked = addon.BagSortIsProtected and addon:IsModuleEnabled("bagsort") and addon.BagSortIsProtected(container, slot)
+            if isJunk(link) and not locked then
                 visit(container, slot, link)
             end
         end

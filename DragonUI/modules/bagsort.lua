@@ -259,6 +259,103 @@ local function SetSlotLocked(bag, slot, locked)
     return true
 end
 
+-- Temucraft: auto-locks (Bags > Bag Sort > "Lock Quest Items and Keys", on by default: cfg.auto_lock). Quest items
+-- (item class Quest, "Quest Item" binding or "This Item Begins a Quest"), keys (item class Key, or they fit the
+-- keyring) and the items an objective of a quest in the quest log asks for count as locked like a padlocked slot:
+-- sorting leaves them where they are, Sell Junk skips them, a sale of one at a vendor is bought straight back and a
+-- delete of one is refused. The lock follows the item, not the slot; a quest's items unlock when the quest leaves
+-- the log (turned in or abandoned). The lock hotkey on one of them unlocks that item by hand
+-- (cfg.autoLockExempt[itemID]) and locks it again.
+local autoScanTip
+local autoFacts = {}        -- itemID -> true (quest item or key) / false
+local questNeeds = {}       -- item name -> true: an objective of a quest in the log asks for it
+local questNeedsDirty = true
+local QUEST_CLASS = select(12, GetAuctionItemClasses())
+
+local function AutoLockOn()
+    local cfg = GetModuleConfig()
+    return cfg ~= nil and cfg.auto_lock ~= false
+end
+
+local function AutoExempt()
+    local cfg = GetModuleConfig()
+    if not cfg then return nil end
+    if type(cfg.autoLockExempt) ~= "table" then
+        cfg.autoLockExempt = {}
+    end
+    return cfg.autoLockExempt
+end
+
+local function IsQuestOrKeyItem(itemID)
+    local known = autoFacts[itemID]
+    if known ~= nil then return known end
+    local name, link, _, _, _, itemType = GetItemInfo(itemID)
+    if not name then return false end -- not in the item cache yet: asked again next time
+    local result = false
+    if itemType == "Quest" or itemType == "Key" or (QUEST_CLASS and itemType == QUEST_CLASS) then
+        result = true
+    elseif GetItemFamily and bit.band(GetItemFamily(itemID) or 0, 256) ~= 0 then
+        result = true -- fits the keyring
+    else
+        if not autoScanTip then
+            autoScanTip = CreateFrame("GameTooltip", "DragonUIBagSortAutoLockTip", nil, "GameTooltipTemplate")
+        end
+        autoScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+        autoScanTip:ClearLines()
+        autoScanTip:SetHyperlink(link)
+        for i = 2, math.min(autoScanTip:NumLines() or 0, 6) do
+            local line = _G["DragonUIBagSortAutoLockTipTextLeft" .. i]
+            local text = line and line:GetText()
+            if text and (text == ITEM_BIND_QUEST or text == ITEM_STARTS_QUEST) then
+                result = true
+                break
+            end
+        end
+        autoScanTip:Hide()
+    end
+    autoFacts[itemID] = result
+    return result
+end
+
+-- item objectives read "Linen Cloth: 3/10"; a finished one still needs its items for the turn-in
+local function ReadQuestNeeds()
+    wipe(questNeeds)
+    questNeedsDirty = false
+    for index = 1, GetNumQuestLogEntries() or 0 do
+        local _, _, _, _, isHeader = GetQuestLogTitle(index)
+        if not isHeader then
+            for objective = 1, GetNumQuestLeaderBoards(index) or 0 do
+                local text, kind = GetQuestLogLeaderBoard(objective, index)
+                if kind == "item" and text then
+                    local itemName = text:match("^(.-):%s*%d+%s*/%s*%d+") or text:match("^(.-):")
+                    if itemName and itemName ~= "" then
+                        questNeeds[itemName] = true
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function IsAutoLockedItem(itemID)
+    if not itemID or not AutoLockOn() then return false end
+    local exempt = AutoExempt()
+    if exempt and exempt[itemID] then return false end
+    if IsQuestOrKeyItem(itemID) then return true end
+    if questNeedsDirty then ReadQuestNeeds() end
+    local name = GetItemInfo(itemID)
+    return name ~= nil and questNeeds[name] == true
+end
+
+-- a padlocked slot or an auto-locked item: what sorting, Sell Junk, vendors and deleting leave alone
+local function IsSlotProtected(bag, slot)
+    if IsSlotLocked(bag, slot) then return true end
+    if type(bag) ~= "number" or bag < -2 or bag > 11 then return false end -- guild bank tabs: padlocks only
+    return IsAutoLockedItem(ItemIDFromLink(GetContainerItemLink(bag, slot)))
+end
+addon.BagSortIsProtected = IsSlotProtected
+addon.BagSortIsAutoLocked = IsAutoLockedItem
+
 local GetBagSlotFromButton
 
 -- Guild bank item slots use `.tab` instead of a bag id; not a real bag/bank slot.
@@ -309,7 +406,7 @@ local function UpdateButtonLockMarker(button)
     if not marker then return end
 
     local bag, slot = GetBagSlotFromButton(button)
-    if bag and slot and IsSlotLocked(bag, slot) then
+    if bag and slot and IsSlotProtected(bag, slot) then
         marker:SetVertexColor(GetLockMarkerColor())
         marker:Show()
     else
@@ -358,6 +455,25 @@ local function IsAnyBagUIVisible()
 end
 
 local function ToggleSlotLockByBagSlot(bag, slot)
+    -- Temucraft: an auto-locked item is unlocked, and locked again, by hand per item
+    local itemID = type(bag) == "number" and bag >= -2 and bag <= 11 and ItemIDFromLink(GetContainerItemLink(bag, slot))
+    local exempt = itemID and AutoLockOn() and not IsSlotLocked(bag, slot) and AutoExempt()
+    if exempt then
+        local link = GetContainerItemLink(bag, slot) or ""
+        if exempt[itemID] then
+            exempt[itemID] = nil
+            if IsAutoLockedItem(itemID) then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00cc66DragonUI:|r " .. string.format(T("%s is locked again.", "%s is locked again."), link), 0.4, 1, 0.4)
+                RefreshAllLockMarkers()
+                return
+            end
+        elseif IsAutoLockedItem(itemID) then
+            exempt[itemID] = true
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00cc66DragonUI:|r " .. string.format(T("%s unlocked (it was locked as a quest item, key or quest objective).", "%s unlocked (it was locked as a quest item, key or quest objective)."), link), 0.4, 1, 0.4)
+            RefreshAllLockMarkers()
+            return
+        end
+    end
     local newState = not IsSlotLocked(bag, slot)
     SetSlotLocked(bag, slot, newState)
     if newState then
@@ -540,7 +656,7 @@ local function GetBagnonSpaces(sortModule, originalGetSpaces, ...)
 
     local filteredSpaces = {}
     for _, space in ipairs(spaces) do
-        if not (space and space.bag and space.slot and IsSlotLocked(space.bag, space.slot)) then
+        if not (space and space.bag and space.slot and IsSlotProtected(space.bag, space.slot)) then
             if space then
                 space.index = #filteredSpaces
                 if space.item then
@@ -805,7 +921,7 @@ local function InstallAltClickHooks()
         -- Closed bags show no marker and create no slot button, so there is nothing to find.
         if not IsAnyBagUIVisible() then return end
         HookKnownSlotButtons()
-        if HasLockedSlots() then
+        if HasLockedSlots() or AutoLockOn() then
             RefreshAllLockMarkers()
         end
     end)
@@ -971,7 +1087,7 @@ local function CaptureBags(bags)
     for _, bag in ipairs(bags) do
         local column = {}
         for slot = 1, BagSlotCount(bag) do
-            local cell = { bag = bag, slot = slot, pinned = IsSlotLocked(bag, slot) }
+            local cell = { bag = bag, slot = slot, pinned = IsSlotProtected(bag, slot) }
             local itemID = ItemIDFromLink(BagGetItemLink(bag, slot))
             if itemID then
                 local _, count = BagGetItemInfo(bag, slot)
@@ -2265,4 +2381,95 @@ addon.SortBankBags = SortBankBags
 addon.SortGuildBankTab = SortGuildBankTab
 -- Lets the options panel re-tint visible lock icons live when the color changes.
 addon.RefreshBagSortLockMarkers = RefreshAllLockMarkers
+
+-- Temucraft: the auto-locks' guards (see IsSlotProtected). The quest log is read again when it changes. A locked item
+-- sold at a vendor (right-click or dropped on the vendor) is bought back at once: the client has no way to refuse
+-- the sale itself without tainting the bag buttons. A delete of one is refused before its confirmation shows.
+do
+    local lastPick        -- { itemID, protected, time }: the item last picked up from a bag
+    local soldWatch = {}  -- itemID -> time: protected items just sold
+    local buybackCount, buybackLast = 0, nil
+    local guard = CreateFrame("Frame")
+
+    local function Note(itemID, protected)
+        if itemID and protected then soldWatch[itemID] = GetTime() end
+    end
+
+    local function Warn(itemID, what)
+        local _, link = GetItemInfo(itemID)
+        addon:Print(string.format(T("%s is locked (quest item, key, quest objective or padlocked slot): %s", "%s is locked (quest item, key, quest objective or padlocked slot): %s"),
+            link or ("item " .. tostring(itemID)), what))
+    end
+
+    hooksecurefunc("PickupContainerItem", function(bag, slot)
+        local kind, itemID = GetCursorInfo()
+        if kind ~= "item" then lastPick = nil return end
+        local slotID = ItemIDFromLink(GetContainerItemLink(bag, slot))
+        if slotID ~= itemID then lastPick = nil return end
+        lastPick = { itemID = itemID, protected = IsModuleEnabled() and IsSlotProtected(bag, slot), time = GetTime() }
+    end)
+
+    hooksecurefunc("UseContainerItem", function(bag, slot)
+        if not (MerchantFrame and MerchantFrame:IsShown()) or not IsModuleEnabled() then return end
+        local itemID = ItemIDFromLink(GetContainerItemLink(bag, slot))
+        Note(itemID, itemID and IsSlotProtected(bag, slot))
+    end)
+
+    -- the item on the cursor is the one the delete confirmation is about
+    local DELETE_POPUPS = { DELETE_ITEM = true, DELETE_GOOD_ITEM = true, DELETE_QUEST_ITEM = true, DELETE_GOOD_QUEST_ITEM = true }
+    hooksecurefunc("StaticPopup_Show", function(which)
+        if not DELETE_POPUPS[which] or not IsModuleEnabled() then return end
+        local kind, itemID = GetCursorInfo()
+        if kind ~= "item" then return end
+        local fromLocked = lastPick and lastPick.itemID == itemID and lastPick.protected
+        if fromLocked or IsAutoLockedItem(itemID) then
+            StaticPopup_Hide(which)
+            ClearCursor()
+            Warn(itemID, T("not deleted. Unlock it first (lock hotkey on the item).", "not deleted. Unlock it first (lock hotkey on the item)."))
+        end
+    end)
+
+    local function CheckBuyback()
+        -- a sale adds the newest entry at the end; a full list (12) drops its oldest one instead of growing
+        local count = GetNumBuybackItems() or 0
+        local newest = count > 0 and GetBuybackItemLink(count) or nil
+        local grew = count > buybackCount or (count == buybackCount and count > 0 and newest ~= buybackLast)
+        buybackCount, buybackLast = count, newest
+        if not grew then return end
+        local itemID = ItemIDFromLink(newest)
+        if not itemID then return end
+        local now = GetTime()
+        local sold = soldWatch[itemID]
+        if not sold and lastPick and lastPick.itemID == itemID and lastPick.protected and now - lastPick.time < 30 then
+            sold = now -- dropped on the vendor from the cursor
+        end
+        if sold and now - sold < 10 then
+            soldWatch[itemID] = nil
+            lastPick = nil
+            BuybackItem(count)
+            buybackCount, buybackLast = count - 1, nil
+            Warn(itemID, T("bought back. Unlock it first to sell it.", "bought back. Unlock it first to sell it."))
+        end
+    end
+
+    guard:RegisterEvent("QUEST_LOG_UPDATE")
+    guard:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
+    guard:RegisterEvent("MERCHANT_SHOW")
+    guard:RegisterEvent("MERCHANT_UPDATE")
+    guard:RegisterEvent("MERCHANT_CLOSED")
+    guard:SetScript("OnEvent", function(self, event)
+        if event == "QUEST_LOG_UPDATE" or event == "UNIT_QUEST_LOG_CHANGED" then
+            questNeedsDirty = true
+            if IsModuleEnabled() and AutoLockOn() then RefreshAllLockMarkers() end
+        elseif event == "MERCHANT_SHOW" then
+            buybackCount = GetNumBuybackItems() or 0
+            buybackLast = buybackCount > 0 and GetBuybackItemLink(buybackCount) or nil
+            wipe(soldWatch)
+        elseif event == "MERCHANT_UPDATE" then
+            if IsModuleEnabled() then CheckBuyback() end
+        else
+            wipe(soldWatch)
+        end
+    end)
+end
 addon.BagSortDefaultLockColor = DEFAULT_LOCK_MARKER_COLOR
