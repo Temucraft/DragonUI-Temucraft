@@ -251,6 +251,66 @@ local function CreateFooter(f)
     f.commandsFull = LO["Commands: /dragonui, /dui, /pi — /dragonui edit (editor) — /dragonui help"]
 end
 
+-- Backup for the typed-text event: a 0.15 s text check that exists only while the box has focus.
+local function AddSearchPoll(f, searchBox)
+    local poll = CreateFrame("Frame", nil, f)
+    poll.idle = 0
+    poll:Hide()
+    poll:SetScript("OnUpdate", function(self, elapsed)
+        self.idle = self.idle + elapsed
+        if self.idle < 0.15 then return end
+        self.idle = 0
+        Panel:QueueLiveSearch(searchBox:GetText())
+    end)
+    searchBox:HookScript("OnEditFocusGained", function(self)
+        Panel._queuedText = Panel:NormalizeSearchQuery(self:GetText())
+        poll.idle = 0
+        poll:Show()
+    end)
+    searchBox:HookScript("OnEditFocusLost", function() poll:Hide() end)
+    searchBox:HookScript("OnHide", function() poll:Hide() end)
+end
+
+-- Temucraft: the settings inside a host UI's own Options window. DragonUI_Host (a table the client's FrameXML sets
+-- before addons load) has OpenOptions(tab): true when the host showed them, false to get this window, and
+-- CloseOptions(). The host lists Panel:GetTabList() itself and calls Panel:Embed(parent, tab) for the page and
+-- Panel:Unembed() when it hides: the page only (title bar with the category name and the search box, the settings
+-- under it), no window, category list or footer. The window comes back whenever no host takes the settings.
+local EMBED_BAR = 30
+
+local function Host()
+    local host = _G.DragonUI_Host
+    return type(host) == "table" and host or nil
+end
+
+local function CreateEmbedFrame(parent)
+    local f = CreateFrame("Frame", "DragonUIOptionsEmbed", parent)
+    f:SetAllPoints(parent)
+    f.headerHeight = 0
+
+    local content = CreateFrame("Frame", nil, f)
+    content:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -EMBED_BAR)
+    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+    f.content = content
+
+    local headerTitle = f:CreateFontString(nil, "ARTWORK")
+    headerTitle:SetFontObject(GameFontNormalLarge)
+    headerTitle:SetJustifyH("LEFT")
+    headerTitle:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -8)
+    f.headerTitle = headerTitle
+
+    local searchBox = CreateSearchBox(f, content)
+    searchBox:ClearAllPoints()
+    searchBox:SetPoint("TOPRIGHT", f, "TOPRIGHT", -8, -4)
+    searchBox:SetWidth(240)
+    f.searchBox         = searchBox
+    f.searchPlaceholder = searchBox.hint
+    AddSearchPoll(f, searchBox)
+
+    f:Hide()
+    return f
+end
+
 local function CreatePanel()
     local height = math.min(WINDOW_HEIGHT, math.max(WINDOW_MIN_HEIGHT, math.floor((UIParent:GetHeight() or WINDOW_HEIGHT) - 40)))
 
@@ -301,24 +361,7 @@ local function CreatePanel()
     local searchBox = CreateSearchBox(f, content)
     f.searchBox         = searchBox
     f.searchPlaceholder = searchBox.hint
-
-    -- Backup for the typed-text event: a 0.15 s text check that exists only while the box has focus.
-    local poll = CreateFrame("Frame", nil, f)
-    poll.idle = 0
-    poll:Hide()
-    poll:SetScript("OnUpdate", function(self, elapsed)
-        self.idle = self.idle + elapsed
-        if self.idle < 0.15 then return end
-        self.idle = 0
-        Panel:QueueLiveSearch(searchBox:GetText())
-    end)
-    searchBox:HookScript("OnEditFocusGained", function(self)
-        Panel._queuedText = Panel:NormalizeSearchQuery(self:GetText())
-        poll.idle = 0
-        poll:Show()
-    end)
-    searchBox:HookScript("OnEditFocusLost", function() poll:Hide() end)
-    searchBox:HookScript("OnHide", function() poll:Hide() end)
+    AddSearchPoll(f, searchBox)
 
     CreateFooter(f)
     FUI.AddResizeGrip(f, function() Panel:RefreshContentSize() end)
@@ -530,7 +573,7 @@ function Panel:SelectTab(key, highlight)
     local sf = scroll.frame
     sf:SetParent(self.frame.content)
     sf:ClearAllPoints()
-    sf:SetPoint("TOPLEFT", self.frame.content, "TOPLEFT", SCROLL_MARGIN, -(HEADER_HEIGHT + SCROLL_MARGIN))
+    sf:SetPoint("TOPLEFT", self.frame.content, "TOPLEFT", SCROLL_MARGIN, -((self.frame.headerHeight or HEADER_HEIGHT) + SCROLL_MARGIN))
     sf:SetPoint("BOTTOMRIGHT", self.frame.content, "BOTTOMRIGHT", -SCROLL_MARGIN, 4)
     sf:SetFrameStrata("DIALOG")
     sf:Show()
@@ -603,8 +646,8 @@ function Panel:GetScale()
 end
 
 function Panel:ApplyScale()
-    if self.frame then
-        FUI.SetWindowScale(self.frame, self:GetScale())
+    if self.windowFrame then
+        FUI.SetWindowScale(self.windowFrame, self:GetScale())
     end
 end
 
@@ -637,7 +680,7 @@ end
 
 -- UIParent's rescale shifts windows anchored by offset; keep this one where it is on screen.
 function Panel:ApplyUIScale()
-    local frame = self.frame
+    local frame = self.windowFrame
     local x, y
     if frame then x, y = frame:GetCenter() end
     local before = x and frame:GetEffectiveScale()
@@ -660,11 +703,26 @@ function Panel:Open(selectTab)
         return
     end
 
-    if not self.frame then
-        self.frame = CreatePanel()
+    -- Temucraft: inside the host's Options window (Embed), or the host opens it there
+    if self.embedHost and self.embedFrame then
+        self.frame = self.embedFrame
+        self.embedFrame:Show()
+        local embedTab = selectTab or self.currentTab or (self.tabOrder[1] or nil)
+        if embedTab and self.tabs[embedTab] then self:SelectTab(embedTab) end
+        return
+    end
+    local host = Host()
+    if host and type(host.OpenOptions) == "function" and host.OpenOptions(self.tabs[selectTab or ""] and selectTab or nil) then
+        return
+    end
+
+    if not self.windowFrame then
+        self.windowFrame = CreatePanel()
+        self.frame = self.windowFrame
         BuildTabButtons()
         LayoutFooter()
     end
+    self.frame = self.windowFrame
     self:ApplyScale()
 
     self.frame:SetFrameLevel(100)
@@ -711,6 +769,11 @@ end
 
 function Panel:Toggle(selectTab)
     if self.frame and self.frame:IsShown() then
+        local host = Host()
+        if self.embedHost and host and type(host.CloseOptions) == "function" then
+            host.CloseOptions()
+            return
+        end
         self:Close()
     else
         self:Open(selectTab)
@@ -721,12 +784,61 @@ function Panel:IsOpen()
     return self.frame and self.frame:IsShown()
 end
 
+-- Temucraft: the host's side (see CreateEmbedFrame). false in combat (Open refuses it too).
+function Panel:Embed(parent, tab)
+    if not parent then return false end
+    if InCombatLockdown() then return false end
+    if self.windowFrame and self.windowFrame:IsShown() then
+        self.frame = self.windowFrame
+        self:Close()
+    end
+    if not self.embedFrame then
+        self.embedFrame = CreateEmbedFrame(parent)
+    end
+    local e = self.embedFrame
+    if self.frame == e and e:IsShown() then self:Close() end
+    e:SetParent(parent)
+    e:ClearAllPoints()
+    e:SetAllPoints(parent)
+    self.embedHost = parent
+    self.frame = e
+    e:Show()
+    if not (tab and self.tabs[tab]) then
+        tab = self.currentTab or self.tabOrder[1]
+    end
+    if tab then self:SelectTab(tab) end
+    return true
+end
+
+function Panel:Unembed()
+    if self.embedFrame and self.frame == self.embedFrame then
+        self:Close()
+    end
+    self.embedHost = nil
+    self.frame = self.windowFrame
+end
+
+-- the categories in the window's list order: { key, text, group }
+function Panel:GetTabList()
+    local out = {}
+    for _, group in ipairs(GroupedTabs()) do
+        for _, key in ipairs(group.keys) do
+            local info = self.tabs[key]
+            out[#out + 1] = { key = key, text = info and info.text or key, group = LO[group.label] or group.label }
+        end
+    end
+    return out
+end
+
 -- Open() refuses combat and not every control's refresh is known to be combat-safe, so an open panel closes.
 local combatClose = CreateFrame("Frame")
 combatClose:RegisterEvent("PLAYER_REGEN_DISABLED")
 combatClose:SetScript("OnEvent", function()
     if Panel:IsOpen() then
+        local embedded = Panel.embedHost ~= nil
         Panel:Close()
+        local host = Host()
+        if embedded and host and type(host.CloseOptions) == "function" then host.CloseOptions() end
         addon:Print(LO["Options closed for combat."])
     end
 end)

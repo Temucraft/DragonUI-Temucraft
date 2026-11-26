@@ -893,8 +893,42 @@ local function HasOtherAddonsButton()
     return _G.GameMenuButtonAddons or _G.GameMenuButtonAddOns or IsAddOnLoaded("ACP")
 end
 
+-- The list itself, for the Esc menu button and for a host UI's own AddOns row (addon.ToggleAddonList).
+local function ShowAddonList()
+    if AddonListFrame and AddonListFrame:IsShown() then return end
+    if not AddonListFrame then BuildWindow() end
+
+    TakeSnapshot()
+    outOfDateCheck:SetChecked(snapshotCheckVersion == "0")
+    searchText = ""
+    if searchBox then searchBox:SetText("") end
+    BuildHierarchy()
+    ScanLiveIcons()
+    ApplyFilter()
+    ApplyScale()
+    UpdateAddonList()
+
+    AddonListFrame:Show()
+end
+
+function addon.ToggleAddonList()
+    if not addon:IsModuleEnabled("addonmanager") then return false end
+    if AddonListFrame and AddonListFrame:IsShown() then
+        AddonListFrame:Hide()
+    else
+        ShowAddonList()
+    end
+    return true
+end
+
 local function AddMenuButton()
     if menuBtn or HasOtherAddonsButton() then return end
+    -- Temucraft: the host's Esc menu has its own AddOns row, which opens this list (addon.ToggleAddonList)
+    if addon.IsHostedGameMenu and addon.IsHostedGameMenu() then
+        AddonManagerModule.initialized = true
+        AddonManagerModule.applied = true
+        return
+    end
 
     menuBtn = CreateFrame("Button", "GameMenuButtonDragonUIAddons", GameMenuFrame, "GameMenuButtonTemplate")
     -- 140 like gamemenu.lua: at the template's 144 the Forever skin looks wider than the stock buttons.
@@ -919,20 +953,7 @@ local function AddMenuButton()
     menuBtn:SetScript("OnClick", function()
         PlaySound("igMainMenuOption")
         HideUIPanel(GameMenuFrame)
-        if AddonListFrame and AddonListFrame:IsShown() then return end
-        if not AddonListFrame then BuildWindow() end
-
-        TakeSnapshot()
-        outOfDateCheck:SetChecked(snapshotCheckVersion == "0")
-        searchText = ""
-        if searchBox then searchBox:SetText("") end
-        BuildHierarchy()
-        ScanLiveIcons()
-        ApplyFilter()
-        ApplyScale()
-        UpdateAddonList()
-
-        AddonListFrame:Show()
+        ShowAddonList()
     end)
 end
 

@@ -87,6 +87,17 @@ local function GetMenuHostFrame()
     return GetGameMenuFrame()
 end
 
+-- Temucraft: a host UI whose own Esc menu already has DragonUI's rows (DragonUI_Host.gameMenu, set by the client's
+-- FrameXML before addons load) gets no button from here: two layouts moving the same buttons made a circular anchor
+-- ("GameMenuButtonContinue is dependent on this"), and the host opens the settings inside its own Options window.
+local function IsHostedMenu()
+    local host = _G and _G.DragonUI_Host
+    if type(host) ~= "table" then return false end
+    if type(host.gameMenu) == "function" then return host.gameMenu() and true or false end
+    return host.gameMenu == true
+end
+addon.IsHostedGameMenu = IsHostedMenu
+
 local function IsOptionsAddonUnavailable()
     local reason = select(6, GetAddOnInfo("DragonUI_Options"))
     return reason == "MISSING" or reason == "DISABLED"
@@ -206,7 +217,7 @@ local function PositionDragonUIButton()
 end
 
 local function EnsureDragonUIButton()
-    if IsOptionsAddonUnavailable() then
+    if IsHostedMenu() or IsOptionsAddonUnavailable() then
         if dragonUIButton then
             dragonUIButton:Hide()
         end
@@ -260,7 +271,7 @@ end
 -- ============================================================================
 
 CreateDragonUIButton = function()
-    if IsOptionsAddonUnavailable() then return true end
+    if IsHostedMenu() or IsOptionsAddonUnavailable() then return true end
 
     if dragonUIButton or buttonAdded then return true end
     local menuHost = GetMenuHostFrame()
